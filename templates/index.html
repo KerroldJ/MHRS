@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Harmony Generator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Harmony Generator 🎶</h1>
+    <form action="/generate_harmony" method="POST" enctype="multipart/form-data">
+      <label>Select an audio file (WAV/MP3):</label><br>
+      <input type="file" name="audio_file" required><br><br>
+
+      <label>Harmony Interval (semitones):</label><br>
+      <select name="interval">
+        <option value="4">Major Third (+4)</option>
+        <option value="7">Perfect Fifth (+7)</option>
+        <option value="-5">Perfect Fourth (-5)</option>
+        <option value="-3">Minor Third (-3)</option>
+      </select><br><br>
+
+      <button type="submit">Generate Harmony</button>
+    </form>
+  </div>
+</body>
+</html>
