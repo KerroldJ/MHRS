@@ -16,6 +16,9 @@
             <select name="instrument" id="instrument">
                 <option value="piano">Piano</option>
                 <option value="guitar">Guitar</option>
+                <option value="ukulele">Ukulele</option>
+                <option value="keyboard">Keyboard</option>
+                <option value="bass">Bass</option>
             </select>
 
             <button type="submit" id="submitBtn">Generate Harmony</button>
@@ -36,10 +39,8 @@
         </div>
     </div>
 
-    <!-- Load wavesurfer.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/7.7.6/wavesurfer.min.js"></script>
     <script>
-        // Initialize WaveSurfer
         let wavesurfer = null;
         const playPauseBtn = document.getElementById('playPauseBtn');
         const modal = document.getElementById('audioModal');
@@ -48,17 +49,14 @@
         const errorMsg = document.getElementById('errorMsg');
         const submitBtn = document.getElementById('submitBtn');
 
-        // Form submission with AJAX
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Set loading state
             submitBtn.disabled = true;
             submitBtn.classList.add('loading');
             submitBtn.innerHTML = 'Generating Harmony... <span class="spinner"></span>';
 
-            const form = e.target;
-            const formData = new FormData(form);
+            const formData = new FormData(e.target);
 
             try {
                 const response = await fetch('/process', {
@@ -66,7 +64,6 @@
                     body: formData
                 });
 
-                // Reset loading state
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('loading');
                 submitBtn.innerHTML = 'Generate Harmony';
@@ -82,10 +79,8 @@
                 const blob = await response.blob();
                 const audioUrl = URL.createObjectURL(blob);
 
-                // Initialize or reinitialize WaveSurfer
-                if (wavesurfer) {
-                    wavesurfer.destroy();
-                }
+                if (wavesurfer) wavesurfer.destroy();
+
                 wavesurfer = WaveSurfer.create({
                     container: '#waveform',
                     waveColor: '#4CAF50',
@@ -95,17 +90,12 @@
                     responsive: true
                 });
 
-                // Load audio into WaveSurfer
                 wavesurfer.load(audioUrl);
-
-                // Set download button href
                 downloadBtn.href = audioUrl;
-
-                // Show modal
                 modal.style.display = 'block';
                 errorMsg.style.display = 'none';
+
             } catch (error) {
-                // Reset loading state on error
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('loading');
                 submitBtn.innerHTML = 'Generate Harmony';
@@ -116,7 +106,6 @@
             }
         });
 
-        // Play/Pause button toggle
         playPauseBtn.addEventListener('click', () => {
             if (wavesurfer) {
                 wavesurfer.playPause();
@@ -124,7 +113,6 @@
             }
         });
 
-        // Close modal
         closeModal.addEventListener('click', () => {
             if (wavesurfer) {
                 wavesurfer.stop();
@@ -134,7 +122,6 @@
             errorMsg.style.display = 'none';
         });
 
-        // Close modal when clicking outside
         window.addEventListener('click', (e) => {
             if (e.target === modal) {
                 if (wavesurfer) {
