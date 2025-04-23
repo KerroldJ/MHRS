@@ -8,7 +8,7 @@
 <body>
     <div class="container">
         <h1>Upload Audio to Harmonize</h1>
-        <form id="uploadForm" action="/process" method="post" enctype="multipart/form-data">
+        <form id="uploadForm" action="/upload-audio" method="post" enctype="multipart/form-data">
             <label for="audio">Upload MP3 file:</label>
             <input type="file" name="audio" accept="audio/mp3" required>
 
@@ -59,7 +59,7 @@
             const formData = new FormData(e.target);
 
             try {
-                const response = await fetch('/process', {
+                const response = await fetch('/upload-audio', {
                     method: 'POST',
                     body: formData
                 });
