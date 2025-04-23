@@ -32,5 +32,4 @@ A system that analyzes a user-uploaded audio file, identifies its tonal characte
 | Backend       | Flask (Python)    |
 | Audio Analysis| Librosa, NumPy    |
 | Audio Output  | Soundfile, Pydub  |
-| ML/AI (optional) | Scikit-learn, TensorFlow (if used) |
 
