@@ -8,7 +8,7 @@ from utils.audio_analysis import analyze_tones
 from utils.harmony_recommender import recommend_harmony
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'Uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join('static', 'Uploads')
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'flac', 'ogg'}
 
 # Create the uploads directory if it doesn't exist
