@@ -2,7 +2,7 @@ import numpy as np
 from scipy.io import wavfile
 import lameenc
 import os
-from chord_config import CHORD_NOTES, INSTRUMENT_WEIGHTS
+from utils.chord_config import CHORD_NOTES, INSTRUMENT_WEIGHTS
 
 def synthesize_chords(chords, instrument, duration_per_chord=2.0, sample_rate=44100):
     import random

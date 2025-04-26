@@ -1,5 +1,5 @@
 import numpy as np
-from chord_config import DEFAULT_CHORDS, get_chords_from_pitches
+from utils.chord_config import DEFAULT_CHORDS, get_chords_from_pitches
 from utils.harmony_generator import synthesize_chords
 
 def recommend_harmony(features, instrument):
