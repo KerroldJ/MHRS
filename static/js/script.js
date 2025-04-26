@@ -198,6 +198,6 @@ document.getElementById('regenerateButton').addEventListener('click', async () =
         alert('Failed to regenerate harmony.');
     }
 
-    regenerateBtn.textContent = '🔁 Regenerate Harmony';
+    regenerateBtn.textContent = 'Regenerate Harmony';
     regenerateBtn.disabled = false;
 });

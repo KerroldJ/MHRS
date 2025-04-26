@@ -5,7 +5,7 @@ import numpy as np
 import librosa
 import lameenc
 from utils.audio_analysis import analyze_tones
-from utils.harmony_recommender import recommend_harmony
+from utils.recommender import recommend_harmony
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'Uploads')
