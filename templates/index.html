@@ -65,15 +65,19 @@
       <button class="replay-button" id="replayButton">Replay</button>
       <div id="uploadedWaveform"></div>
       <br>
+
       <h4>Recommended Chords:</h4>
       <ul id="chords"></ul>
       <h4>🎵 Chord Progression:</h4>
       <p id="progression"></p>
+      
       <h4>Recommended Harmony Preview:</h4>
       <button class="play-button" id="harmonyPlayButton">Play</button>
       <button class="replay-button" id="harmonyReplayButton">Replay</button>
+      <button class="synth-button" id="regenerateButton">🔁 Regenerate Harmony</button>
       <div id="harmonyWaveform"></div>
       <br>
+
       <h4>Synthesized Harmony:</h4>
       <button class="synth-button" id="synthPlayButton">Play Combined</button>
       <a id="downloadLink" class="download-link" style="display:none;" download>Download MP3</a>
@@ -178,39 +182,76 @@
       }
     });
 
-    // Uploaded audio replay
-    document.getElementById('replayButton').addEventListener('click', () => {
-      if (uploadedWaveform) {
-        uploadedWaveform.stop();
-        uploadedWaveform.play(0);
-        document.getElementById('playButton').textContent = 'Pause';
-      }
+    document.getElementById('regenerateButton').addEventListener('click', async () => {
+  const instrument = document.getElementById('instrument').value;
+
+  if (!instrument) {
+    alert("Please select an instrument.");
+    return;
+  }
+
+  // Optional: Disable button during processing
+  const regenerateBtn = document.getElementById('regenerateButton');
+  regenerateBtn.textContent = 'Regenerating...';
+  regenerateBtn.disabled = true;
+
+  const response = await fetch('/regenerate', {
+    method: 'POST',
+    body: JSON.stringify({ instrument }),
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+  if (response.ok) {
+    const data = await response.json();
+
+    // Clear previous waveforms
+    if (harmonyWaveform) {
+      harmonyWaveform.destroy();
+      document.getElementById('harmonyWaveform').innerHTML = '';
+    }
+    if (combinedWaveform) {
+      combinedWaveform.destroy();
+      document.getElementById('combinedWaveform').innerHTML = '';
+    }
+
+    // Display new harmony waveform
+    harmonyWaveform = WaveSurfer.create({
+      container: '#harmonyWaveform',
+      waveColor: '#ccc',
+      progressColor: '#4caf50',
+      height: 60
+    });
+    harmonyWaveform.load(data.harmony_preview_url);
+
+    harmonyWaveform.on('finish', () => {
+      document.getElementById('harmonyPlayButton').textContent = 'Play';
     });
 
-    // Harmony preview play/pause
-    document.getElementById('harmonyPlayButton').addEventListener('click', () => {
-      if (harmonyWaveform) {
-        harmonyWaveform.playPause();
-        document.getElementById('harmonyPlayButton').textContent = harmonyWaveform.isPlaying() ? 'Pause' : 'Play';
-      }
+    // Combined waveform
+    combinedWaveform = WaveSurfer.create({
+      container: '#combinedWaveform',
+      waveColor: '#999',
+      progressColor: '#ff9800',
+      height: 80
+    });
+    combinedWaveform.load(data.combined_audio_url);
+
+    combinedWaveform.on('finish', () => {
+      document.getElementById('synthPlayButton').textContent = 'Play Combined';
     });
 
-    // Harmony preview replay
-    document.getElementById('harmonyReplayButton').addEventListener('click', () => {
-      if (harmonyWaveform) {
-        harmonyWaveform.stop();
-        harmonyWaveform.play(0);
-        document.getElementById('harmonyPlayButton').textContent = 'Pause';
-      }
-    });
+    // Update download link
+    const downloadLink = document.getElementById('downloadLink');
+    downloadLink.href = data.combined_audio_url;
+    downloadLink.style.display = 'inline';
 
-    // Combined audio play/pause
-    document.getElementById('synthPlayButton').addEventListener('click', () => {
-      if (combinedWaveform) {
-        combinedWaveform.playPause();
-        document.getElementById('synthPlayButton').textContent = combinedWaveform.isPlaying() ? 'Pause Combined' : 'Play Combined';
-      }
-    });
+  } else {
+    alert('Failed to regenerate harmony.');
+  }
+
+  regenerateBtn.textContent = '🔁 Regenerate Harmony';
+  regenerateBtn.disabled = false;
+});
   </script>
 </body>
 </html>

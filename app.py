@@ -93,5 +93,13 @@ def combine_audio(uploaded_path, harmony_path, instrument, sample_rate=44100):
 def serve_uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+@app.route('/regenerate-harmony', methods=['POST'])
+def regenerate_harmony():
+    data = request.json
+    features = data.get('features')
+    instrument = data.get('instrument')
+    harmony = recommend_harmony(features, instrument)
+    return jsonify(harmony)
+
 if __name__ == '__main__':
     app.run(debug=True)
