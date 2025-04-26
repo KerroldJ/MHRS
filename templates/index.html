@@ -3,255 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <title>Harmony Recommendation System</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 30px;
-    }
-    .container {
-      max-width: 500px;
-      margin: auto;
-    }
-    .preview {
-      margin-top: 20px;
-    }
-    .play-button, .replay-button, .synth-button {
-      padding: 8px 16px;
-      margin-bottom: 10px;
-      margin-right: 10px;
-      background-color: #2196f3;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .play-button:hover, .replay-button:hover, .synth-button:hover {
-      background-color: #1976d2;
-    }
-    .download-link {
-      margin-left: 10px;
-      color: #2196f3;
-      text-decoration: none;
-    }
-    .download-link:hover {
-      text-decoration: underline;
-    }
-  </style>
+   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-  <div class="container">
-    <h2>Harmony Recommendation System</h2>
+<div class="container">
+  <h2>Harmony Recommendation System</h2>
 
-    <form id="uploadForm">
-      <label>Select Instrument:</label><br>
-      <select name="instrument" id="instrument" required>
-        <option value="">-- Choose an instrument --</option>
-        <option value="acoustic_guitar">Acoustic Guitar</option>
-        <option value="electric_guitar">Electric Guitar</option>
-        <option value="keyboard">Keyboard</option>
-        <option value="ukulele">Ukulele</option>
-        <option value="bass">Bass</option>
-      </select><br><br>
+  <form id="uploadForm">
+    <label>Select Instrument:</label><br>
+    <select name="instrument" id="instrument" required>
+      <option value="">-- Choose an instrument --</option>
+      <option value="acoustic_guitar">Acoustic Guitar</option>
+      <option value="electric_guitar">Electric Guitar</option>
+      <option value="keyboard">Keyboard</option>
+      <option value="ukulele">Ukulele</option>
+      <option value="bass">Bass</option>
+    </select><br><br>
 
-      <label>Upload Audio File:</label><br>
-      <input type="file" name="audio" id="audio" accept=".mp3" required><br><br>
+    <label>Upload Audio File:</label><br>
+    <input type="file" name="audio" id="audio" accept=".mp3" required><br><br>
 
-      <button type="submit">Generate Harmony</button>
-    </form>
+    <button type="submit">Generate Harmony</button>
+  </form>
 
-    <div class="preview" id="result" style="display:none;">
-      <h4>Uploaded Audio:</h4>
-      <button class="play-button" id="playButton">Play</button>
-      <button class="replay-button" id="replayButton">Replay</button>
-      <div id="uploadedWaveform"></div>
-      <br>
+  <div class="preview" id="result" style="display:none;">
+    <h4>Uploaded Audio:</h4>
+    <button class="play-button" id="playButton">Play</button>
+    <button class="replay-button" id="replayButton">Replay</button>
+    <div id="uploadedWaveform"></div>
+    <br>
 
-      <h4>Recommended Chords:</h4>
-      <ul id="chords"></ul>
-      <h4>🎵 Chord Progression:</h4>
-      <p id="progression"></p>
-      
-      <h4>Recommended Harmony Preview:</h4>
-      <button class="play-button" id="harmonyPlayButton">Play</button>
-      <button class="replay-button" id="harmonyReplayButton">Replay</button>
-      <button class="synth-button" id="regenerateButton">🔁 Regenerate Harmony</button>
-      <div id="harmonyWaveform"></div>
-      <br>
+    <h4>Recommended Chords:</h4>
+    <ul id="chords"></ul>
+    <h4>🎵 Chord Progression:</h4>
+    <p id="progression"></p>
 
-      <h4>Synthesized Harmony:</h4>
-      <button class="synth-button" id="synthPlayButton">Play Combined</button>
-      <a id="downloadLink" class="download-link" style="display:none;" download>Download MP3</a>
-      <div id="combinedWaveform"></div>
-    </div>
+    <h4>Recommended Harmony Preview:</h4>
+    <button class="play-button" id="harmonyPlayButton">Play</button>
+    <button class="replay-button" id="harmonyReplayButton">Replay</button>
+    <div id="harmonyWaveform"></div>
+    <br>
+
+    <h4>Synthesized Harmony:</h4>
+    <button class="synth-button" id="synthPlayButton">Play Combined</button>
+    <a id="downloadLink" class="download-link" style="display:none;" download>Download MP3</a>
+    <div id="combinedWaveform"></div>
+
+    <br>
+    <button class="synth-button" id="regenerateButton">🔁 Regenerate Harmony</button>
   </div>
+</div>
 
-  <script src="https://unpkg.com/wavesurfer.js"></script>
-  <script>
-    const form = document.getElementById('uploadForm');
-    let uploadedWaveform = null;
-    let harmonyWaveform = null;
-    let combinedWaveform = null;
-
-    form.addEventListener('submit', async function (e) {
-      e.preventDefault();
-
-      const formData = new FormData(form);
-      const response = await fetch('/recommend', {
-        method: 'POST',
-        body: formData
-      });
-
-      const resultDiv = document.getElementById('result');
-      const chordList = document.getElementById('chords');
-      const progressionText = document.getElementById('progression');
-      chordList.innerHTML = '';
-      progressionText.innerHTML = '';
-      resultDiv.style.display = 'none';
-
-      if (response.ok) {
-        const data = await response.json();
-        resultDiv.style.display = 'block';
-
-        // Display recommended chords
-        data.recommended_chords.forEach(chord => {
-          const li = document.createElement('li');
-          li.textContent = chord;
-          chordList.appendChild(li);
-        });
-
-        // Display chord progression
-        progressionText.textContent = data.chord_progression.join(' -> ');
-
-        // Uploaded audio waveform
-        if (data.uploaded_audio_url) {
-          uploadedWaveform = WaveSurfer.create({
-            container: '#uploadedWaveform',
-            waveColor: '#999',
-            progressColor: '#2196f3',
-            height: 80
-          });
-          uploadedWaveform.load(data.uploaded_audio_url);
-          uploadedWaveform.on('finish', () => {
-            document.getElementById('playButton').textContent = 'Play';
-          });
-        }
-
-        // Harmony preview waveform
-        if (data.harmony_preview_url) {
-          harmonyWaveform = WaveSurfer.create({
-            container: '#harmonyWaveform',
-            waveColor: '#ccc',
-            progressColor: '#4caf50',
-            height: 60
-          });
-          harmonyWaveform.load(data.harmony_preview_url);
-          harmonyWaveform.on('finish', () => {
-            document.getElementById('harmonyPlayButton').textContent = 'Play';
-          });
-        }
-
-        // Combined audio waveform
-        if (data.combined_audio_url) {
-          combinedWaveform = WaveSurfer.create({
-            container: '#combinedWaveform',
-            waveColor: '#999',
-            progressColor: '#ff9800',
-            height: 80
-          });
-          combinedWaveform.load(data.combined_audio_url);
-          combinedWaveform.on('finish', () => {
-            document.getElementById('synthPlayButton').textContent = 'Play Combined';
-          });
-
-          // Set download link
-          const downloadLink = document.getElementById('downloadLink');
-          downloadLink.href = data.combined_audio_url;
-          downloadLink.style.display = 'inline';
-        }
-
-      } else {
-        alert('Failed to get harmony recommendations.');
-      }
-    });
-
-    // Uploaded audio play/pause
-    document.getElementById('playButton').addEventListener('click', () => {
-      if (uploadedWaveform) {
-        uploadedWaveform.playPause();
-        document.getElementById('playButton').textContent = uploadedWaveform.isPlaying() ? 'Pause' : 'Play';
-      }
-    });
-
-    document.getElementById('regenerateButton').addEventListener('click', async () => {
-  const instrument = document.getElementById('instrument').value;
-
-  if (!instrument) {
-    alert("Please select an instrument.");
-    return;
-  }
-
-  // Optional: Disable button during processing
-  const regenerateBtn = document.getElementById('regenerateButton');
-  regenerateBtn.textContent = 'Regenerating...';
-  regenerateBtn.disabled = true;
-
-  const response = await fetch('/regenerate', {
-    method: 'POST',
-    body: JSON.stringify({ instrument }),
-    headers: { 'Content-Type': 'application/json' }
-  });
-
-  if (response.ok) {
-    const data = await response.json();
-
-    // Clear previous waveforms
-    if (harmonyWaveform) {
-      harmonyWaveform.destroy();
-      document.getElementById('harmonyWaveform').innerHTML = '';
-    }
-    if (combinedWaveform) {
-      combinedWaveform.destroy();
-      document.getElementById('combinedWaveform').innerHTML = '';
-    }
-
-    // Display new harmony waveform
-    harmonyWaveform = WaveSurfer.create({
-      container: '#harmonyWaveform',
-      waveColor: '#ccc',
-      progressColor: '#4caf50',
-      height: 60
-    });
-    harmonyWaveform.load(data.harmony_preview_url);
-
-    harmonyWaveform.on('finish', () => {
-      document.getElementById('harmonyPlayButton').textContent = 'Play';
-    });
-
-    // Combined waveform
-    combinedWaveform = WaveSurfer.create({
-      container: '#combinedWaveform',
-      waveColor: '#999',
-      progressColor: '#ff9800',
-      height: 80
-    });
-    combinedWaveform.load(data.combined_audio_url);
-
-    combinedWaveform.on('finish', () => {
-      document.getElementById('synthPlayButton').textContent = 'Play Combined';
-    });
-
-    // Update download link
-    const downloadLink = document.getElementById('downloadLink');
-    downloadLink.href = data.combined_audio_url;
-    downloadLink.style.display = 'inline';
-
-  } else {
-    alert('Failed to regenerate harmony.');
-  }
-
-  regenerateBtn.textContent = '🔁 Regenerate Harmony';
-  regenerateBtn.disabled = false;
-});
-  </script>
+<script src="https://unpkg.com/wavesurfer.js"></script>
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
