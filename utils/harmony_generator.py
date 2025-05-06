@@ -1,55 +1,152 @@
+import librosa
 import numpy as np
-from scipy.io import wavfile
-import lameenc
+import scipy.signal as signal
+from pydub import AudioSegment
+import scipy.io.wavfile as wavfile
+from typing import Tuple, List
 import os
-from utils.chord_config import CHORD_NOTES, INSTRUMENT_WEIGHTS
 
-def synthesize_chords(chords, instrument, duration_per_chord=2.0, sample_rate=44100):
-    import random
-    import uuid
+class HarmonyGenerator:
+    def __init__(self, input_audio_path: str, instrument: str, sample_rate: int = 44100):
+        """Initialize the Harmony Generator with input audio and instrument choice."""
+        self.input_audio_path = input_audio_path
+        self.instrument = instrument.lower()
+        self.sample_rate = sample_rate
+        self.audio, self.sr = librosa.load(input_audio_path, sr=sample_rate, mono=True)
+        self.key = None
+        self.tempo = None
+        self.harmony = None
+        self.chords = []
+        self.progression = ""
 
-    unique_id = uuid.uuid4().hex[:8]
-    output_path = os.path.join('static/uploads', f'chord_preview_{instrument}_{unique_id}.mp3')
-    total_samples = int(duration_per_chord * sample_rate * len(chords))
-    audio = np.zeros(total_samples)
-    t = np.linspace(0, duration_per_chord, int(duration_per_chord * sample_rate), False)
-    weights = INSTRUMENT_WEIGHTS.get(instrument, [1.0, 0.8, 0.6])
+    def analyze_audio(self) -> Tuple[str, float, List[str], str]:
+        """Analyze the input audio to detect key, tempo, chords, and progression."""
+        tempo, _ = librosa.beat.beat_track(y=self.audio, sr=self.sr)
+        self.tempo = tempo
 
-    def envelope(t, duration):
-        attack, decay, sustain, release = {
-            'acoustic_guitar': (0.02, 0.2, 0.6, 0.2),
-            'electric_guitar': (0.01, 0.15, 0.8, 0.1),
-            'keyboard': (0.05, 0.1, 0.9, 0.3),
-            'ukulele': (0.03, 0.15, 0.7, 0.2),
-            'bass': (0.08, 0.2, 0.5, 0.4)
-        }.get(instrument, (0.05, 0.1, 0.7, 0.2))
+        chroma = librosa.feature.chroma_cqt(y=self.audio, sr=self.sr)
+        chroma_mean = np.mean(chroma, axis=1)
+        key_idx = np.argmax(chroma_mean)
+        keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        self.key = keys[key_idx]
 
-        env = np.ones_like(t)
-        env[t < attack] = t[t < attack] / attack
-        env[(t >= attack) & (t < attack + decay)] = 1 - (1 - sustain) * ((t[(t >= attack) & (t < attack + decay)] - attack) / decay)
-        env[t >= duration - release] *= (1 - (t[t >= duration - release] - (duration - release)) / release)
-        return env
+        # Generate simple I-IV-V-I chord progression
+        chord_map = {
+            'C': ['C', 'F', 'G', 'C'], 'C#': ['C#', 'F#', 'G#', 'C#'],
+            'D': ['D', 'G', 'A', 'D'], 'D#': ['D#', 'G#', 'A#', 'D#'],
+            'E': ['E', 'A', 'B', 'E'], 'F': ['F', 'A#', 'C', 'F'],
+            'F#': ['F#', 'B', 'C#', 'F#'], 'G': ['G', 'C', 'D', 'G'],
+            'G#': ['G#', 'C#', 'D#', 'G#'], 'A': ['A', 'D', 'E', 'A'],
+            'A#': ['A#', 'D#', 'F', 'A#'], 'B': ['B', 'E', 'F#', 'B']
+        }
+        self.chords = chord_map[self.key]
+        self.progression = ' -> '.join(self.chords)
+        
+        return self.key, self.tempo, self.chords, self.progression
 
-    for i, chord in enumerate(chords):
-        chord_wave = sum(
-            weight * np.sin(2 * np.pi * (freq + random.uniform(-0.5, 0.5)) * t)
-            for freq, weight in zip(CHORD_NOTES[chord], weights)
-        )
-        chord_wave *= envelope(t, duration_per_chord)
-        start = i * len(t)
-        audio[start:start + len(t)] = chord_wave
+    def generate_harmony_notes(self) -> List[Tuple[float, float]]:
+        """Generate harmony notes based on the detected key and tempo."""
+        note_freqs = {
+            'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63,
+            'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00,
+            'A#': 466.16, 'B': 493.88
+        }
+        
+        key_idx = [k for k, v in enumerate(['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']) if v == self.key][0]
+        chord_notes = [
+            [self.key],  # I chord
+            [list(note_freqs.keys())[(key_idx + 5) % 12]],  # IV chord
+            [list(note_freqs.keys())[(key_idx + 7) % 12]],  # V chord
+            [self.key]   # I chord
+        ]
+        
+        beat_duration = 60 / self.tempo
+        harmony_notes = []
+        for i in range(4):
+            start_time = i * beat_duration
+            note = chord_notes[i % len(chord_notes)][0]
+            freq = note_freqs[note]
+            harmony_notes.append((freq, start_time))
+        
+        return harmony_notes
 
-    max_val = np.max(np.abs(audio)) + 1e-6
-    audio = (audio / max_val * 32767).astype(np.int16)
+    def synthesize_instrument(self, freq: float, duration: float) -> np.ndarray:
+        """Synthesize a note for the chosen instrument."""
+        t = np.linspace(0, duration, int(self.sample_rate * duration), False)
+        
+        if self.instrument == 'acoustic_guitar':
+            wave = signal.sawtooth(2 * np.pi * freq * t)
+            envelope = np.exp(-t * 4)
+            wave *= envelope
+        elif self.instrument == 'electric_guitar':
+            wave = signal.square(2 * np.pi * freq * t)
+            envelope = np.exp(-t * 2)
+            wave *= envelope
+        elif self.instrument == 'keyboard':
+            wave = 0.7 * np.sin(2 * np.pi * freq * t)
+            wave += 0.2 * np.sin(2 * np.pi * 2 * freq * t)
+            wave += 0.1 * np.sin(2 * np.pi * 3 * freq * t)
+        elif self.instrument == 'ukulele':
+            wave = np.sin(2 * np.pi * freq * t)
+            envelope = np.exp(-t * 5)
+            wave *= envelope
+        elif self.instrument == 'bass':
+            wave = np.sin(2 * np.pi * freq * t)
+            envelope = np.exp(-t * 1.5)
+            wave += 0.3 * np.sin(2 * np.pi * 0.5 * freq * t)
+            wave *= envelope
+        else:
+            wave = np.sin(2 * np.pi * freq * t)
+        
+        attack = 0.1
+        decay = 0.2
+        sustain = 0.7
+        release = 0.1
+        envelope = np.ones_like(t)
+        attack_samples = int(attack * self.sample_rate)
+        decay_samples = int(decay * self.sample_rate)
+        release_samples = int(release * self.sample_rate)
+        
+        envelope[:attack_samples] = np.linspace(0, 1, attack_samples)
+        envelope[attack_samples:attack_samples + decay_samples] = np.linspace(1, sustain, decay_samples)
+        envelope[-release_samples:] = np.linspace(sustain, 0, release_samples)
+        
+        return wave * envelope
 
-    encoder = lameenc.Encoder()
-    encoder.set_bit_rate(192)
-    encoder.set_in_sample_rate(sample_rate)
-    encoder.set_channels(1)
-    encoder.set_quality(5)
-    mp3_data = encoder.encode(audio.tobytes()) + encoder.flush()
+    def generate_harmony(self) -> np.ndarray:
+        """Generate the harmony audio track."""
+        harmony_notes = self.generate_harmony_notes()
+        harmony_length = len(self.audio) / self.sample_rate
+        harmony_audio = np.zeros(int(self.sample_rate * harmony_length))
+        
+        for freq, start_time in harmony_notes:
+            duration = 60 / self.tempo
+            if start_time + duration > harmony_length:
+                duration = harmony_length - start_time
+            note = self.synthesize_instrument(freq, duration)
+            start_sample = int(start_time * self.sample_rate)
+            end_sample = start_sample + len(note)
+            harmony_audio[start_sample:end_sample] += note[:end_sample - start_sample]
+        
+        harmony_audio /= np.max(np.abs(harmony_audio)) + 1e-10
+        return harmony_audio
 
-    with open(output_path, 'wb') as f:
-        f.write(mp3_data)
-
-    return output_path
+    def combine_audio(self, output_path: str):
+        """Combine the original audio with the generated harmony and save as MP3."""
+        self.harmony = self.generate_harmony()
+        if len(self.harmony) < len(self.audio):
+            self.harmony = np.pad(self.harmony, (0, len(self.audio) - len(self.harmony)))
+        elif len(self.harmony) > len(self.audio):
+            self.harmony = self.harmony[:len(self.audio)]
+        
+        mixed_audio = 0.5 * self.audio + 0.5 * self.harmony
+        mixed_audio /= np.max(np.abs(mixed_audio)) + 1e-10
+        
+        # Save as WAV temporarily
+        temp_wav = output_path.rsplit('.', 1)[0] + '.wav'
+        wavfile.write(temp_wav, self.sample_rate, mixed_audio.astype(np.float32))
+        
+        # Convert to MP3
+        audio = AudioSegment.from_wav(temp_wav)
+        audio.export(output_path, format='mp3')
+        os.remove(temp_wav)

@@ -1,105 +1,82 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, send_file, render_template, jsonify
 from werkzeug.utils import secure_filename
+from utils.harmony_generator import HarmonyGenerator
 import os
-import numpy as np
-import librosa
-import lameenc
-from utils.audio_analysis import analyze_tones
-from utils.recommender import recommend_harmony
+import tempfile
+import uuid
+from pydub import AudioSegment
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = os.path.join('static', 'Uploads')
-ALLOWED_EXTENSIONS = {'mp3', 'wav', 'flac', 'ogg'}
+app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
+app.config['ALLOWED_EXTENSIONS'] = {'mp3', 'm4a'}
 
-# Create the uploads directory if it doesn't exist
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+def allowed_file(filename: str) -> bool:
+    """Check if the uploaded file has an allowed extension."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     return render_template('index.html')
 
-@app.route('/recommend', methods=['POST'])
-def recommend():
+@app.route('/upload', methods=['POST'])
+def upload_audio():
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['audio']
     instrument = request.form.get('instrument')
-    audio_file = request.files.get('audio')
-
-    if not instrument or not audio_file or not allowed_file(audio_file.filename):
-        return jsonify({'error': 'Invalid input'}), 400
-
-    filename = secure_filename(audio_file.filename)
-    saved_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    audio_file.save(saved_path)
-
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Only MP3 and M4A files are allowed'}), 400
+    if not instrument or instrument.lower() not in ['acoustic_guitar', 'electric_guitar', 'keyboard', 'ukulele', 'bass']:
+        return jsonify({'error': 'Invalid instrument selected'}), 400
+    
+    # Save uploaded file temporarily
+    filename = secure_filename(file.filename)
+    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{filename}")
+    file.save(input_path)
+    
+    # Convert MP3/M4A to WAV
     try:
-        tonal_features = analyze_tones(saved_path)
-        harmony_data = recommend_harmony(tonal_features, instrument)
-
-        # Combine uploaded audio with synthesized harmony
-        combined_audio_path = combine_audio(saved_path, harmony_data['preview_path'], instrument)
-
+        audio = AudioSegment.from_file(input_path)
+        wav_path = input_path.rsplit('.', 1)[0] + '.wav'
+        audio.export(wav_path, format='wav')
+        
+        # Process audio
+        generator = HarmonyGenerator(wav_path, instrument)
+        key, tempo, chords, progression = generator.analyze_audio()
+        output_filename = f"harmonized_{uuid.uuid4()}.mp3"
+        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+        generator.combine_audio(output_path)
+        
+        # Clean up temporary files
+        os.remove(input_path)
+        os.remove(wav_path)
+        
+        # Return response with chords, progression, and file path
         return jsonify({
-            'recommended_chords': harmony_data['chords'],
-            'chord_progression': harmony_data['progression'],
-            'harmony_preview_url': f"/Uploads/{os.path.basename(harmony_data['preview_path'])}",
-            'uploaded_audio_url': f'/Uploads/{filename}',
-            'combined_audio_url': f'/Uploads/{os.path.basename(combined_audio_path)}'
+            'chords': chords,
+            'progression': progression,
+            'harmony_file': output_filename,
+            'uploaded_file': filename
         })
     except Exception as e:
-        print("Error:", e)
-        return jsonify({'error': 'Processing failed'}), 500
+        os.remove(input_path) if os.path.exists(input_path) else None
+        os.remove(wav_path) if os.path.exists(wav_path) else None
+        return jsonify({'error': f'Error processing audio: {str(e)}'}), 500
 
-def combine_audio(uploaded_path, harmony_path, instrument, sample_rate=44100):
-    """Combine uploaded audio with synthesized harmony and save as MP3."""
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'combined_{instrument}.mp3')
-    
-    # Load audio files with librosa
-    uploaded_audio, sr = librosa.load(uploaded_path, sr=sample_rate, mono=True)
-    harmony_audio, _ = librosa.load(harmony_path, sr=sample_rate, mono=True)
-    
-    # Adjust harmony volume to avoid overpowering
-    harmony_audio = harmony_audio * 0.5  # Reduce amplitude by 50%
-    
-    # Ensure both audios are the same length (trim longer one)
-    min_length = min(len(uploaded_audio), len(harmony_audio))
-    uploaded_audio = uploaded_audio[:min_length]
-    harmony_audio = harmony_audio[:min_length]
-    
-    # Mix the audios
-    combined = uploaded_audio + harmony_audio
-    
-    # Normalize combined audio
-    combined = combined / (np.max(np.abs(combined)) + 1e-6)
-    combined = (combined * 32767).astype(np.int16)
-    
-    # Save as MP3 using lameenc
-    encoder = lameenc.Encoder()
-    encoder.set_bit_rate(192)
-    encoder.set_in_sample_rate(sample_rate)
-    encoder.set_channels(1)  # Mono
-    encoder.set_quality(5)   # Medium quality
-    mp3_data = encoder.encode(combined.tobytes())
-    mp3_data += encoder.flush()
-    
-    with open(output_path, 'wb') as f:
-        f.write(mp3_data)
-    
-    return output_path
-
-@app.route('/Uploads/<path:filename>')
-def serve_uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-@app.route('/regenerate-harmony', methods=['POST'])
-def regenerate_harmony():
-    data = request.json
-    features = data.get('features')
-    instrument = data.get('instrument')
-    harmony = recommend_harmony(features, instrument)
-    return jsonify(harmony)
+@app.route('/download/<filename>')
+def download_file(filename):
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if os.path.exists(file_path):
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name='harmonized_audio.mp3',
+            mimetype='audio/mp3'
+        )
+    return jsonify({'error': 'File not found'}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
