@@ -4,6 +4,8 @@ from utils.harmony_generator import HarmonyGenerator
 import os
 import tempfile
 import uuid
+import librosa
+import soundfile as sf
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()

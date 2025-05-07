@@ -1,10 +1,12 @@
 import librosa
 import numpy as np
 import scipy.signal as signal
-from pydub import AudioSegment
 import scipy.io.wavfile as wavfile
+import ffmpeg
 from typing import Tuple, List
 import os
+import tempfile
+import uuid
 
 class HarmonyGenerator:
     def __init__(self, input_audio_path: str, instrument: str, sample_rate: int = 44100):
@@ -12,7 +14,10 @@ class HarmonyGenerator:
         self.input_audio_path = input_audio_path
         self.instrument = instrument.lower()
         self.sample_rate = sample_rate
-        self.audio, self.sr = librosa.load(input_audio_path, sr=sample_rate, mono=True)
+        try:
+            self.audio, self.sr = librosa.load(input_audio_path, sr=sample_rate, mono=True)
+        except Exception as e:
+            raise ValueError(f"Failed to load audio file: {str(e)}")
         self.key = None
         self.tempo = None
         self.harmony = None
@@ -143,10 +148,17 @@ class HarmonyGenerator:
         mixed_audio /= np.max(np.abs(mixed_audio)) + 1e-10
         
         # Save as WAV temporarily
-        temp_wav = output_path.rsplit('.', 1)[0] + '.wav'
+        temp_wav = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4()}.wav")
         wavfile.write(temp_wav, self.sample_rate, mixed_audio.astype(np.float32))
         
-        # Convert to MP3
-        audio = AudioSegment.from_wav(temp_wav)
-        audio.export(output_path, format='mp3')
-        os.remove(temp_wav)
+        # Convert WAV to MP3 using ffmpeg-python
+        try:
+            stream = ffmpeg.input(temp_wav)
+            stream = ffmpeg.output(stream, output_path, format='mp3', acodec='mp3', ar=self.sample_rate)
+            ffmpeg.run(stream, overwrite_output=True)
+        except ffmpeg.Error as e:
+            raise RuntimeError(f"Failed to convert WAV to MP3: {str(e)}")
+        finally:
+            # Clean up temporary WAV file
+            if os.path.exists(temp_wav):
+                os.remove(temp_wav)
