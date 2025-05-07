@@ -4,7 +4,6 @@ from utils.harmony_generator import HarmonyGenerator
 import os
 import tempfile
 import uuid
-from pydub import AudioSegment
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
@@ -37,24 +36,17 @@ def upload_audio():
     input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{filename}")
     file.save(input_path)
     
-    # Convert MP3/M4A to WAV
     try:
-        audio = AudioSegment.from_file(input_path)
-        wav_path = input_path.rsplit('.', 1)[0] + '.wav'
-        audio.export(wav_path, format='wav')
-        
-        # Process audio
-        generator = HarmonyGenerator(wav_path, instrument)
+        # Process audio directly (assumes HarmonyGenerator supports MP3/M4A)
+        generator = HarmonyGenerator(input_path, instrument)
         key, tempo, chords, progression = generator.analyze_audio()
         output_filename = f"harmonized_{uuid.uuid4()}.mp3"
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
         generator.combine_audio(output_path)
         
-        # Clean up temporary files
+        # Clean up input file
         os.remove(input_path)
-        os.remove(wav_path)
         
-        # Return response with chords, progression, and file path
         return jsonify({
             'chords': chords,
             'progression': progression,
@@ -63,7 +55,6 @@ def upload_audio():
         })
     except Exception as e:
         os.remove(input_path) if os.path.exists(input_path) else None
-        os.remove(wav_path) if os.path.exists(wav_path) else None
         return jsonify({'error': f'Error processing audio: {str(e)}'}), 500
 
 @app.route('/download/<filename>')
