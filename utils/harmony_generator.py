@@ -2,11 +2,15 @@ import librosa
 import numpy as np
 import scipy.signal as signal
 import scipy.io.wavfile as wavfile
-import ffmpeg
 from typing import Tuple, List
 import os
 import tempfile
 import uuid
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class HarmonyGenerator:
     def __init__(self, input_audio_path: str, instrument: str, sample_rate: int = 44100):
@@ -14,10 +18,17 @@ class HarmonyGenerator:
         self.input_audio_path = input_audio_path
         self.instrument = instrument.lower()
         self.sample_rate = sample_rate
+        self.valid_instruments = {'acoustic_guitar', 'electric_guitar', 'keyboard', 'ukulele', 'bass', 'sine'}
+        
+        if self.instrument not in self.valid_instruments:
+            raise ValueError(f"Invalid instrument. Choose from: {', '.join(self.valid_instruments)}")
+        
         try:
             self.audio, self.sr = librosa.load(input_audio_path, sr=sample_rate, mono=True)
         except Exception as e:
+            logger.error(f"Failed to load audio file: {str(e)}")
             raise ValueError(f"Failed to load audio file: {str(e)}")
+        
         self.key = None
         self.tempo = None
         self.harmony = None
@@ -26,28 +37,33 @@ class HarmonyGenerator:
 
     def analyze_audio(self) -> Tuple[str, float, List[str], str]:
         """Analyze the input audio to detect key, tempo, chords, and progression."""
-        tempo, _ = librosa.beat.beat_track(y=self.audio, sr=self.sr)
-        self.tempo = tempo
+        try:
+            tempo, _ = librosa.beat.beat_track(y=self.audio, sr=self.sr)
+            self.tempo = float(tempo)  # Ensure tempo is a float for JSON serialization
 
-        chroma = librosa.feature.chroma_cqt(y=self.audio, sr=self.sr)
-        chroma_mean = np.mean(chroma, axis=1)
-        key_idx = np.argmax(chroma_mean)
-        keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        self.key = keys[key_idx]
+            chroma = librosa.feature.chroma_cqt(y=self.audio, sr=self.sr)
+            chroma_mean = np.mean(chroma, axis=1)
+            key_idx = np.argmax(chroma_mean)
+            keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            self.key = keys[key_idx]
 
-        # Generate simple I-IV-V-I chord progression
-        chord_map = {
-            'C': ['C', 'F', 'G', 'C'], 'C#': ['C#', 'F#', 'G#', 'C#'],
-            'D': ['D', 'G', 'A', 'D'], 'D#': ['D#', 'G#', 'A#', 'D#'],
-            'E': ['E', 'A', 'B', 'E'], 'F': ['F', 'A#', 'C', 'F'],
-            'F#': ['F#', 'B', 'C#', 'F#'], 'G': ['G', 'C', 'D', 'G'],
-            'G#': ['G#', 'C#', 'D#', 'G#'], 'A': ['A', 'D', 'E', 'A'],
-            'A#': ['A#', 'D#', 'F', 'A#'], 'B': ['B', 'E', 'F#', 'B']
-        }
-        self.chords = chord_map[self.key]
-        self.progression = ' -> '.join(self.chords)
-        
-        return self.key, self.tempo, self.chords, self.progression
+            # Generate simple I-IV-V-I chord progression
+            chord_map = {
+                'C': ['C', 'F', 'G', 'C'], 'C#': ['C#', 'F#', 'G#', 'C#'],
+                'D': ['D', 'G', 'A', 'D'], 'D#': ['D#', 'G#', 'A#', 'D#'],
+                'E': ['E', 'A', 'B', 'E'], 'F': ['F', 'A#', 'C', 'F'],
+                'F#': ['F#', 'B', 'C#', 'F#'], 'G': ['G', 'C', 'D', 'G'],
+                'G#': ['G#', 'C#', 'D#', 'G#'], 'A': ['A', 'D', 'E', 'A'],
+                'A#': ['A#', 'D#', 'F', 'A#'], 'B': ['B', 'E', 'F#', 'B']
+            }
+            self.chords = chord_map[self.key]
+            self.progression = ' -> '.join(self.chords)
+            
+            logger.info(f"Audio analysis completed: key={self.key}, tempo={self.tempo}, chords={self.chords}")
+            return self.key, self.tempo, self.chords, self.progression
+        except Exception as e:
+            logger.error(f"Error analyzing audio: {str(e)}")
+            raise RuntimeError(f"Error analyzing audio: {str(e)}")
 
     def generate_harmony_notes(self) -> List[Tuple[float, float]]:
         """Generate harmony notes based on the detected key and tempo."""
@@ -100,9 +116,10 @@ class HarmonyGenerator:
             envelope = np.exp(-t * 1.5)
             wave += 0.3 * np.sin(2 * np.pi * 0.5 * freq * t)
             wave *= envelope
-        else:
+        else:  # Default to sine wave
             wave = np.sin(2 * np.pi * freq * t)
         
+        # ADSR envelope
         attack = 0.1
         decay = 0.2
         sustain = 0.7
@@ -120,45 +137,42 @@ class HarmonyGenerator:
 
     def generate_harmony(self) -> np.ndarray:
         """Generate the harmony audio track."""
-        harmony_notes = self.generate_harmony_notes()
-        harmony_length = len(self.audio) / self.sample_rate
-        harmony_audio = np.zeros(int(self.sample_rate * harmony_length))
-        
-        for freq, start_time in harmony_notes:
-            duration = 60 / self.tempo
-            if start_time + duration > harmony_length:
-                duration = harmony_length - start_time
-            note = self.synthesize_instrument(freq, duration)
-            start_sample = int(start_time * self.sample_rate)
-            end_sample = start_sample + len(note)
-            harmony_audio[start_sample:end_sample] += note[:end_sample - start_sample]
-        
-        harmony_audio /= np.max(np.abs(harmony_audio)) + 1e-10
-        return harmony_audio
+        try:
+            harmony_notes = self.generate_harmony_notes()
+            harmony_length = len(self.audio) / self.sample_rate
+            harmony_audio = np.zeros(int(self.sample_rate * harmony_length))
+            
+            for freq, start_time in harmony_notes:
+                duration = 60 / self.tempo
+                if start_time + duration > harmony_length:
+                    duration = harmony_length - start_time
+                note = self.synthesize_instrument(freq, duration)
+                start_sample = int(start_time * self.sample_rate)
+                end_sample = start_sample + len(note)
+                harmony_audio[start_sample:end_sample] += note[:end_sample - start_sample]
+            
+            harmony_audio /= np.max(np.abs(harmony_audio)) + 1e-10
+            logger.info("Harmony audio generated successfully")
+            return harmony_audio
+        except Exception as e:
+            logger.error(f"Error generating harmony: {str(e)}")
+            raise RuntimeError(f"Error generating harmony: {str(e)}")
 
     def combine_audio(self, output_path: str):
-        """Combine the original audio with the generated harmony and save as MP3."""
-        self.harmony = self.generate_harmony()
-        if len(self.harmony) < len(self.audio):
-            self.harmony = np.pad(self.harmony, (0, len(self.audio) - len(self.harmony)))
-        elif len(self.harmony) > len(self.audio):
-            self.harmony = self.harmony[:len(self.audio)]
-        
-        mixed_audio = 0.5 * self.audio + 0.5 * self.harmony
-        mixed_audio /= np.max(np.abs(mixed_audio)) + 1e-10
-        
-        # Save as WAV temporarily
-        temp_wav = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4()}.wav")
-        wavfile.write(temp_wav, self.sample_rate, mixed_audio.astype(np.float32))
-        
-        # Convert WAV to MP3 using ffmpeg-python
+        """Combine the original audio with the generated harmony and save as WAV."""
         try:
-            stream = ffmpeg.input(temp_wav)
-            stream = ffmpeg.output(stream, output_path, format='mp3', acodec='mp3', ar=self.sample_rate)
-            ffmpeg.run(stream, overwrite_output=True)
-        except ffmpeg.Error as e:
-            raise RuntimeError(f"Failed to convert WAV to MP3: {str(e)}")
-        finally:
-            # Clean up temporary WAV file
-            if os.path.exists(temp_wav):
-                os.remove(temp_wav)
+            self.harmony = self.generate_harmony()
+            if len(self.harmony) < len(self.audio):
+                self.harmony = np.pad(self.harmony, (0, len(self.audio) - len(self.harmony)))
+            elif len(self.harmony) > len(self.audio):
+                self.harmony = self.harmony[:len(self.audio)]
+            
+            mixed_audio = 0.5 * self.audio + 0.5 * self.harmony
+            mixed_audio /= np.max(np.abs(mixed_audio)) + 1e-10
+            
+            # Save as WAV
+            wavfile.write(output_path, self.sample_rate, mixed_audio.astype(np.float32))
+            logger.info(f"Combined audio saved as WAV: {output_path}")
+        except Exception as e:
+            logger.error(f"Error combining audio: {str(e)}")
+            raise RuntimeError(f"Error combining audio: {str(e)}")

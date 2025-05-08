@@ -1,7 +1,6 @@
 from flask import Flask, request, render_template, jsonify, send_file
 from werkzeug.utils import secure_filename
-from utils.convert_to_mp3 import convert_audio
-from utils.audio_analysis import analyze_tones
+from utils.harmony_generator import HarmonyGenerator
 import os
 import tempfile
 import uuid
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
 app.config['ALLOWED_EXTENSIONS'] = {'wav', 'mp3', 'm4a'}
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit upload size to 16MB
 
 def allowed_file(filename: str) -> bool:
     """Check if the uploaded file has an allowed extension."""
@@ -46,39 +45,43 @@ def upload_audio():
     if not allowed_file(file.filename):
         return jsonify({'error': 'Only WAV, MP3, or M4A files are allowed'}), 400
 
+    instrument = request.form.get('instrument', 'sine').lower()
+    valid_instruments = {'acoustic_guitar', 'electric_guitar', 'keyboard', 'ukulele', 'bass', 'sine'}
+    if instrument not in valid_instruments:
+        return jsonify({'error': f"Invalid instrument. Choose from: {', '.join(valid_instruments)}"}), 400
+
     original_filename = secure_filename(file.filename)
-    file_ext = original_filename.rsplit('.', 1)[1].lower()
     temp_filename = f"{uuid.uuid4()}_{original_filename}"
-    input_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
+    input_path = os.path.join(app.config['UPLOAD_FOLDER'], tempfile.template)
+    file.save(input_path)
 
     try:
-        file.save(input_path)
+        # Initialize HarmonyGenerator and analyze audio
+        harmony_gen = HarmonyGenerator(input_path, instrument)
+        key, tempo, chords, progression = harmony_gen.analyze_audio()
 
-        if file_ext in ['wav', 'mp3']:
-            processed_file_path = input_path
-            converted_filename = temp_filename
-        else:
-            output_filename = f"converted_{uuid.uuid4()}.mp3"
-            output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-            convert_audio(input_path, output_path)
-            cleanup_files(input_path)
-            processed_file_path = output_path
-            converted_filename = output_filename
-            
-            
-        analysis_result = analyze_tones(processed_file_path)
+        # Generate and save combined audio as WAV
+        output_filename = f"harmony_{uuid.uuid4()}.wav"
+        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+        harmony_gen.combine_audio(output_path)
 
-        response = {
-            'processed_file': converted_filename,
+        # Clean up input file
+        cleanup_files(input_path)
+
+        return jsonify({
+            'processed_file': output_filename,
             'original_file': original_filename,
-            'analysis': analysis_result
-        }
-
-        return jsonify(response)
+            'analysis': {
+                'key': key,
+                'tempo': tempo,
+                'chords': chords,
+                'progression': progression
+            }
+        })
 
     except Exception as e:
         logger.error(f"Error processing audio: {str(e)}")
-        cleanup_files(input_path, processed_file_path)
+        cleanup_files(input_path, output_path)
         return jsonify({'error': f'Error processing audio: {str(e)}'}), 500
 
 @app.route('/download/<filename>', methods=['GET'])
@@ -90,8 +93,8 @@ def download_file(filename):
             response = send_file(
                 file_path,
                 as_attachment=True,
-                download_name='converted_audio.mp3',
-                mimetype='audio/mpeg'
+                download_name='harmony_audio.wav',
+                mimetype='audio/wav'
             )
             # Schedule cleanup after sending file
             cleanup_files(file_path)
