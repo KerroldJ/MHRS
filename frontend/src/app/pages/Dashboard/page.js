@@ -1,5 +1,8 @@
 "use client";
+
 import React, { useState } from 'react';
+import Header from '../components/Header';
+import Link from 'next/link';
 
 function Dashboard() {
     const [audioFile, setAudioFile] = useState(null);
@@ -18,11 +21,10 @@ function Dashboard() {
     };
 
     return (
-        <div className="min-h-screen bg-white text-gray-800 px-6 py-10">
-            <div className="max-w-3xl mx-auto bg-gray-50 rounded-xl shadow-md p-6 space-y-6">
-
+        <div className="min-h-screen bg-white text-gray-800">
+            <Header />
+            <div className="max-w-5xl mx-auto px-6 py-12 bg-gray-100 mt-10 rounded-2xl">
                 <h1 className="text-2xl font-bold text-center">Harmony Recommendation System</h1>
-
                 <div>
                     <label className="block mb-2 text-sm font-medium">Upload Audio</label>
                     <input
@@ -104,7 +106,11 @@ function Dashboard() {
                     )}
                 </div>
             </div>
-        </div>
+            
+            <div className="mt-8 text-center">
+                <Link href="/">Go Back To Home</Link>
+            </div>
+        </div>  
     );
 }
 
