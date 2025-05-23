@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
 import numpy as np
@@ -6,10 +7,13 @@ import librosa
 import lameenc
 import uuid
 import logging
-from utils.audio_analysis import analyze_tones
-from utils.recommender import recommend_harmony
+from audio_analysis import analyze_tones
+from recommender import recommend_harmony
+
+
 
 app = Flask(__name__)
+CORS(app) 
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'Uploads')
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'flac', 'ogg'}
 
@@ -121,7 +125,7 @@ def combine_audio(uploaded_path, harmony_path, instrument, sample_rate=44100):
         encoder = lameenc.Encoder()
         encoder.set_bit_rate(192)
         encoder.set_in_sample_rate(sample_rate)
-        encoder.set_channels(1)  # Mono
+        encoder.set_channels(1)
         encoder.set_quality(5)   # Medium quality
         mp3_data = encoder.encode(combined.tobytes())
         mp3_data += encoder.flush()
@@ -157,12 +161,9 @@ def regenerate_harmony():
         return jsonify({'error': 'Missing features or instrument'}), 400
 
     try:
-        # For regeneration, uploaded_audio_path may not be available
-        # Use the original duration from tonal_features
         if 'uploaded_audio_path' not in features and 'duration_sec' in features:
             logger.warning("No uploaded_audio_path for regeneration, using duration_sec")
-            # Fallback: synthesize based on duration_sec if path is unavailable
-            features['uploaded_audio_path'] = None  # Handled in recommend_harmony
+            features['uploaded_audio_path'] = None 
         harmony = recommend_harmony(features, instrument)
         if not harmony or 'preview_path' not in harmony:
             logger.error("Harmony regeneration failed: no preview path returned")

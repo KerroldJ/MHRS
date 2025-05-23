@@ -6,7 +6,7 @@ import librosa
 import random
 import uuid
 import logging
-from utils.chord_config import CHORD_NOTES, INSTRUMENT_WEIGHTS
+from chord_config import CHORD_NOTES, INSTRUMENT_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
