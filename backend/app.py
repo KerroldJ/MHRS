@@ -1,182 +1,150 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_file, send_from_directory
 from flask_cors import CORS
-from werkzeug.utils import secure_filename
-import os
+from io import BytesIO
 import numpy as np
 import librosa
 import lameenc
 import uuid
 import logging
+import tempfile
+import os
+import soundfile as sf
+import time
+
 from audio_analysis import analyze_tones
 from recommender import recommend_harmony
 
-
-
 app = Flask(__name__)
-CORS(app) 
-app.config['UPLOAD_FOLDER'] = os.path.join('static', 'Uploads')
-ALLOWED_EXTENSIONS = {'mp3', 'wav', 'flac', 'ogg'}
+CORS(app)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create the uploads directory if it doesn't exist
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Allowed file extensions
+ALLOWED_EXTENSIONS = {'mp3', 'wav', 'flac', 'ogg'}
+
+# Directory to store audio files
+AUDIO_DIR = os.path.join(app.root_path, 'static', 'audio')
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 def allowed_file(filename):
-    """Check if the file extension is allowed."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/')
-def index():
-    """Render the main page."""
-    return render_template('index.html')
-
-@app.route('/recommend', methods=['POST'])
-def recommend():
-    """Process uploaded audio and recommend harmony."""
-    instrument = request.form.get('instrument')
-    audio_file = request.files.get('audio')
-
-    # Validate inputs
-    if not instrument or not audio_file or not allowed_file(audio_file.filename):
-        logger.error("Invalid input: missing instrument or invalid audio file")
-        return jsonify({'error': 'Missing instrument or invalid audio file'}), 400
-
-    # Generate unique filename to avoid overwrites
-    filename = f"{uuid.uuid4().hex}_{secure_filename(audio_file.filename)}"
-    saved_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    
+def save_audio_to_mp3(audio_data, sample_rate, filename):
     try:
-        # Save uploaded file
-        audio_file.save(saved_path)
-        logger.info(f"Saved uploaded file: {saved_path}")
+        audio_data = audio_data / (np.max(np.abs(audio_data)) + 1e-6)
+        audio_data = (audio_data * 32767).astype(np.int16)
 
-        # Analyze audio using analyze_tones
-        tonal_features = analyze_tones(saved_path)
-        if 'error' in tonal_features:
-            logger.error(f"Audio analysis failed: {tonal_features['error']}")
-            return jsonify({'error': tonal_features['error']}), 500
-
-        # Add uploaded audio path to tonal_features
-        tonal_features['uploaded_audio_path'] = saved_path
-
-        # Recommend harmony
-        harmony_data = recommend_harmony(tonal_features, instrument)
-        if not harmony_data or 'preview_path' not in harmony_data:
-            logger.error("Harmony recommendation failed: no preview path returned")
-            return jsonify({'error': 'Harmony recommendation failed'}), 500
-
-        # Combine uploaded audio with synthesized harmony
-        sample_rate = 44100  # Consistent with analyze_tones
-        combined_audio_path = combine_audio(saved_path, harmony_data['preview_path'], instrument, sample_rate)
-
-        # Prepare response
-        response = {
-            'tonal_features': tonal_features,
-            'recommended_chords': harmony_data['chords'],
-            'chord_progression': harmony_data['progression'],
-            'harmony_preview_url': f"/Uploads/{os.path.basename(harmony_data['preview_path'])}",
-            'uploaded_audio_url': f"/Uploads/{filename}",
-            'combined_audio_url': f"/Uploads/{os.path.basename(combined_audio_path)}"
-        }
-        logger.info(f"Recommendation successful for {filename}")
-        return jsonify(response)
-    
-    except Exception as e:
-        logger.error(f"Processing failed for {filename}: {str(e)}")
-        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
-    finally:
-        # Optionally clean up uploaded file to save space
-        if os.path.exists(saved_path):
-            try:
-                os.remove(saved_path)
-                logger.info(f"Cleaned up uploaded file: {saved_path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up {saved_path}: {str(e)}")
-
-def combine_audio(uploaded_path, harmony_path, instrument, sample_rate=44100):
-    """Combine uploaded audio with synthesized harmony and save as MP3."""
-    output_filename = f"combined_{uuid.uuid4().hex}_{instrument}.mp3"
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-    
-    try:
-        # Load audio files with librosa
-        uploaded_audio, sr = librosa.load(uploaded_path, sr=sample_rate, mono=True)
-        harmony_audio, _ = librosa.load(harmony_path, sr=sample_rate, mono=True)
-        
-        # Adjust harmony volume to avoid overpowering
-        harmony_audio = harmony_audio * 0.5  # Reduce amplitude by 50%
-        
-        # Ensure both audios are the same length (trim longer one)
-        min_length = min(len(uploaded_audio), len(harmony_audio))
-        uploaded_audio = uploaded_audio[:min_length]
-        harmony_audio = harmony_audio[:min_length]
-        
-        # Mix the audios
-        combined = uploaded_audio + harmony_audio
-        
-        # Normalize combined audio
-        combined = combined / (np.max(np.abs(combined)) + 1e-6)
-        combined = (combined * 32767).astype(np.int16)
-        
-        # Save as MP3 using lameenc
         encoder = lameenc.Encoder()
         encoder.set_bit_rate(192)
         encoder.set_in_sample_rate(sample_rate)
         encoder.set_channels(1)
-        encoder.set_quality(5)   # Medium quality
-        mp3_data = encoder.encode(combined.tobytes())
-        mp3_data += encoder.flush()
-        
+        encoder.set_quality(5)
+        mp3_data = encoder.encode(audio_data.tobytes()) + encoder.flush()
+
+        output_path = os.path.join(AUDIO_DIR, filename)
         with open(output_path, 'wb') as f:
             f.write(mp3_data)
-        
-        logger.info(f"Combined audio saved: {output_path}")
+
         return output_path
-    
     except Exception as e:
-        logger.error(f"Failed to combine audio: {str(e)}")
+        logger.error(f"Failed to encode MP3: {str(e)}")
         raise
 
-@app.route('/Uploads/<path:filename>')
-def serve_uploaded_file(filename):
-    """Serve files from the upload folder."""
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/recommend', methods=['POST'])
+def recommend():
+    instrument = request.form.get('instrument')
+    audio_file = request.files.get('audio')
+
+    if not instrument or not audio_file or not allowed_file(audio_file.filename):
+        return jsonify({'error': 'Missing instrument or invalid audio file'}), 400
+
     try:
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        audio_data = audio_file.read()
+        audio_io = BytesIO(audio_data)
+
+        sample_rate = 44100
+        audio_array, sr = librosa.load(audio_io, sr=sample_rate, mono=True)
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+            sf.write(temp_audio.name, audio_array, sample_rate, format='WAV')
+            tonal_features = analyze_tones(temp_audio.name)
+
+        os.unlink(temp_audio.name)
+
+        if 'error' in tonal_features:
+            return jsonify({'error': tonal_features['error']}), 500
+
+        tonal_features['duration_sec'] = librosa.get_duration(y=audio_array, sr=sample_rate)
+
+        # Save uploaded audio
+        uploaded_audio_id = f"{uuid.uuid4()}.mp3"
+        uploaded_audio_path = save_audio_to_mp3(audio_array, sample_rate, uploaded_audio_id)
+
+        harmony_data = recommend_harmony(tonal_features, instrument)
+        if not harmony_data or 'preview_path' not in harmony_data:
+            return jsonify({'error': 'Harmony recommendation failed'}), 500
+
+        harmony_audio, _ = librosa.load(harmony_data['preview_path'], sr=sample_rate, mono=True)
+        os.unlink(harmony_data['preview_path'])
+
+        # Save harmony preview
+        harmony_audio_id = f"{uuid.uuid4()}.mp3"
+        harmony_audio_path = save_audio_to_mp3(harmony_audio, sample_rate, harmony_audio_id)
+
+        # Combine audios
+        harmony_audio = harmony_audio * 0.5
+        min_length = min(len(audio_array), len(harmony_audio))
+        combined_audio = audio_array[:min_length] + harmony_audio[:min_length]
+
+        combined_audio_id = f"{uuid.uuid4()}.mp3"
+        combined_audio_path = save_audio_to_mp3(combined_audio, sample_rate, combined_audio_id)
+
+        return jsonify({
+            'tonal_features': tonal_features,
+            'recommended_chords': harmony_data['chords'],
+            'chord_progression': harmony_data['progression'],
+            'harmony_preview_url': f"/static/audio/{harmony_audio_id}",
+            'uploaded_audio_url': f"/static/audio/{uploaded_audio_id}",
+            'combined_audio_url': f"/static/audio/{combined_audio_id}"
+        })
+
     except Exception as e:
-        logger.error(f"Failed to serve file {filename}: {str(e)}")
-        return jsonify({'error': 'File not found'}), 404
+        logger.error(f"Processing failed: {str(e)}")
+        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
 @app.route('/regenerate-harmony', methods=['POST'])
 def regenerate_harmony():
-    """Regenerate harmony based on provided tonal features and instrument."""
     data = request.json
     features = data.get('features')
     instrument = data.get('instrument')
 
-    if not features or not instrument:
-        logger.error("Invalid input: missing features or instrument")
-        return jsonify({'error': 'Missing features or instrument'}), 400
+    if not features or not instrument or 'duration_sec' not in features:
+        return jsonify({'error': 'Missing features, instrument, or duration'}), 400
 
     try:
-        if 'uploaded_audio_path' not in features and 'duration_sec' in features:
-            logger.warning("No uploaded_audio_path for regeneration, using duration_sec")
-            features['uploaded_audio_path'] = None 
         harmony = recommend_harmony(features, instrument)
         if not harmony or 'preview_path' not in harmony:
-            logger.error("Harmony regeneration failed: no preview path returned")
             return jsonify({'error': 'Harmony regeneration failed'}), 500
 
-        response = {
+        sample_rate = 44100
+        harmony_audio, _ = librosa.load(harmony['preview_path'], sr=sample_rate, mono=True)
+        os.unlink(harmony['preview_path'])
+
+        harmony_audio_id = f"{uuid.uuid4()}.mp3"
+        save_audio_to_mp3(harmony_audio, sample_rate, harmony_audio_id)
+
+        return jsonify({
             'recommended_chords': harmony['chords'],
             'chord_progression': harmony['progression'],
-            'harmony_preview_url': f"/Uploads/{os.path.basename(harmony['preview_path'])}"
-        }
-        logger.info("Harmony regeneration successful")
-        return jsonify(response)
-    
+            'harmony_preview_url': f"/static/audio/{harmony_audio_id}"
+        })
+
     except Exception as e:
         logger.error(f"Harmony regeneration failed: {str(e)}")
         return jsonify({'error': f'Harmony regeneration failed: {str(e)}'}), 500
