@@ -117,6 +117,11 @@
     const instrumentInput = document.getElementById('instrument');
     const instrumentOptions = document.querySelectorAll('.instrument-option');
     let tonalFeatures = null;
+    let audioUrls = {
+      uploaded: null,
+      harmony: null,
+      combined: null
+    };
 
     // Create WaveSurfer instances
     const waveUploaded = WaveSurfer.create({ container: '#wave-uploaded', waveColor: '#ccc', progressColor: '#3b82f6', responsive: true });
@@ -164,6 +169,20 @@
       });
     }
 
+    // Helper to download audio
+    function downloadAudio(url, filename) {
+      if (!url) {
+        showError('Audio file not available for download');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
     uploadForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       clearError();
@@ -188,12 +207,18 @@
       try {
         const response = await fetch('/recommend', {
           method: 'POST',
-          body: formData
+          body: formData,
+          timeout: 30000 // 30 seconds timeout
         });
         const data = await response.json();
 
         if (response.ok) {
           tonalFeatures = data.tonal_features;
+          audioUrls = {
+            uploaded: data.uploaded_audio_url,
+            harmony: data.harmony_preview_url,
+            combined: data.combined_audio_url
+          };
 
           document.getElementById('tonal-features').textContent = JSON.stringify(data.tonal_features, null, 2);
           document.getElementById('recommended-chords').textContent = data.recommended_chords.join(', ');
@@ -214,7 +239,8 @@
           showError(data.error || 'An error occurred');
         }
       } catch (err) {
-        showError('Failed to process request');
+        console.error('Upload error:', err);
+        showError('Failed to process request: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -237,16 +263,24 @@
       setLoading(true);
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
+
         const response = await fetch('/regenerate-harmony', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ features: tonalFeatures, instrument })
+          body: JSON.stringify({ features: tonalFeatures, instrument }),
+          signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
+
         const data = await response.json();
 
         if (response.ok) {
           document.getElementById('recommended-chords').textContent = data.recommended_chords.join(', ');
           document.getElementById('chord-progression').textContent = data.chord_progression;
+          audioUrls.harmony = data.harmony_preview_url;
 
           try {
             await loadWaveform(waveHarmony, data.harmony_preview_url);
@@ -258,7 +292,8 @@
           showError(data.error || 'Failed to regenerate harmony');
         }
       } catch (err) {
-        showError('Failed to regenerate harmony');
+        console.error('Regeneration error:', err);
+        showError('Failed to regenerate harmony: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -266,39 +301,30 @@
 
     // Play, Replay, and Download functionality
     document.getElementById('play-uploaded').addEventListener('click', () => waveUploaded.play());
-    document.getElementById('replay-uploaded').addEventListener('click', () => waveUploaded.seekTo(0));
+    document.getElementById('replay-uploaded').addEventListener('click', () => {
+      waveUploaded.stop();
+      waveUploaded.play();
+    });
     document.getElementById('download-uploaded').addEventListener('click', () => {
-      const url = waveUploaded.getCurrentAudio().src;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'uploaded_audio.mp3';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      downloadAudio(audioUrls.uploaded, 'uploaded_audio.mp3');
     });
 
     document.getElementById('play-harmony').addEventListener('click', () => waveHarmony.play());
-    document.getElementById('replay-harmony').addEventListener('click', () => waveHarmony.seekTo(0));
+    document.getElementById('replay-harmony').addEventListener('click', () => {
+      waveHarmony.stop();
+      waveHarmony.play();
+    });
     document.getElementById('download-harmony').addEventListener('click', () => {
-      const url = waveHarmony.getCurrentAudio().src;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'harmony_preview.mp3';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      downloadAudio(audioUrls.harmony, 'harmony_preview.mp3');
     });
 
     document.getElementById('play-combined').addEventListener('click', () => waveCombined.play());
-    document.getElementById('replay-combined').addEventListener('click', () => waveCombined.seekTo(0));
+    document.getElementById('replay-combined').addEventListener('click', () => {
+      waveCombined.stop();
+      waveCombined.play();
+    });
     document.getElementById('download-combined').addEventListener('click', () => {
-      const url = waveCombined.getCurrentAudio().src;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'combined_audio.mp3';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      downloadAudio(audioUrls.combined, 'combined_audio.mp3');
     });
   </script>
 </body>
