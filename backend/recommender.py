@@ -1,7 +1,7 @@
 import numpy as np
 import logging
-from utils.chord_config import DEFAULT_CHORDS, get_chords_from_pitches
-from utils.harmony_generator import synthesize_chords
+from chord_config import DEFAULT_CHORDS, get_chords_from_pitches
+from harmony_generator import synthesize_chords
 
 logger = logging.getLogger(__name__)
 

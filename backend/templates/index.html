@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Harmony Recommendation System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/wavesurfer.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-2xl">
+    <h1 class="text-3xl font-bold text-center mb-6">Harmony Recommendation System</h1>
+    
+    <!-- Upload Section -->
+    <div class="mb-6">
+      <h2 class="text-xl font-semibold mb-4">Upload Audio File</h2>
+      <form id="upload-form" enctype="multipart/form-data" class="space-y-4">
+        <div>
+          <label for="audio" class="block text-sm font-medium text-gray-700">Select Audio File (MP3, WAV, FLAC, OGG)</label>
+          <input type="file" id="audio" name="audio" accept=".mp3,.wav,.flac,.ogg" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" required>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Select Instrument</label>
+          <input type="hidden" id="instrument" name="instrument" value="">
+          <div id="instrument-grid" class="grid grid-cols-3 gap-4">
+            <div class="instrument-option cursor-pointer p-2 rounded-md hover:bg-blue-50 transition-all duration-200" data-instrument="piano">
+              <img src="/static/image/piano.png" alt="Piano" class="w-20 h-20 mx-auto transform hover:scale-125 transition-transform duration-200">
+              <p class="text-center text-sm mt-2">Piano</p>
+            </div>
+            <div class="instrument-option cursor-pointer p-2 rounded-md hover:bg-blue-50 transition-all duration-200" data-instrument="guitar">
+              <img src="/static/image/guitar.png" alt="Guitar"  class="w-20 h-20 mx-auto transform hover:scale-125 transition-transform duration-200">
+              <p class="text-center text-sm mt-2">Guitar</p>
+            </div>
+            <div class="instrument-option cursor-pointer p-2 rounded-md hover:bg-blue-50 transition-all duration-200" data-instrument="electric-guitar">
+              <img src="/static/image/eguitar.png" alt="Electric Guitar"  class="w-20 h-20 mx-auto transform hover:scale-125 transition-transform duration-200">
+              <p class="text-center text-sm mt-2">Electric Guitar</p>
+            </div>
+            <div class="instrument-option cursor-pointer p-2 rounded-md hover:bg-blue-50 transition-all duration-200" data-instrument="ukulele">
+              <img src="/static/image/ukulele.png" alt="Ukulele" class="w-20 h-20 mx-auto transform hover:scale-125 transition-transform duration-200">
+              <p class="text-center text-sm mt-2">Ukulele</p>
+            </div>
+            <div class="instrument-option cursor-pointer p-2 rounded-md hover:bg-blue-50 transition-all duration-200" data-instrument="bass">
+              <img src="/static/image/bass.png" alt="Bass"  class="w-20 h-20 mx-auto transform hover:scale-125 transition-transform duration-200">
+              <p class="text-center text-sm mt-2">Bass</p>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" id="upload-btn" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Analyze & Recommend</button>
+      </form>
+    </div>
+
+    <!-- Results Section -->
+    <div id="results" class="hidden space-y-6">
+      <h2 class="text-xl font-semibold mb-4">Analysis Results</h2>
+      
+      <div>
+        <h3 class="text-lg font-medium">Tonal Features</h3>
+        <div id="tonal-features" class="mt-2 text-sm text-gray-600 whitespace-pre-wrap"></div>
+      </div>
+
+      <div>
+        <h3 class="text-lg font-medium">Recommended Chords</h3>
+        <div id="recommended-chords" class="mt-2 text-sm text-gray-600"></div>
+      </div>
+
+      <div>
+        <h3 class="text-lg font-medium">Chord Progression</h3>
+        <div id="chord-progression" class="mt-2 text-sm text-gray-600"></div>
+      </div>
+
+      <!-- Waveform Players -->
+      <div class="space-y-6">
+        <div>
+          <h3 class="text-lg font-medium">Uploaded Audio</h3>
+          <div id="wave-uploaded" class="w-full h-30 bg-gray-200 rounded"></div>
+          <div class="flex space-x-2 mt-5">
+            <button id="play-uploaded" class="bg-blue-600 text-white py-1 px-3 rounded-md">Play</button>
+            <button id="replay-uploaded" class="bg-gray-600 text-white py-1 px-3 rounded-md">Replay</button>
+            <button id="download-uploaded" class="bg-green-600 text-white py-1 px-3 rounded-md">Download</button>
+          </div>
+        </div>
+        <div>
+          <h3 class="text-lg font-medium">Harmony Preview</h3>
+          <div id="wave-harmony" class="w-full h-30 bg-gray-200 rounded"></div>
+          <div class="flex space-x-2 mt-5">
+            <button id="play-harmony" class="bg-blue-600 text-white py-1 px-3 rounded-md">Play</button>
+            <button id="replay-harmony" class="bg-gray-600 text-white py-1 px-3 rounded-md">Replay</button>
+            <button id="download-harmony" class="bg-green-600 text-white py-1 px-3 rounded-md">Download</button>
+          </div>
+        </div>
+        <div>
+          <h3 class="text-lg font-medium">Combined Audio</h3>
+          <div id="wave-combined" class="w-full h-30 bg-gray-200 rounded"></div>
+          <div class="flex space-x-2 mt-5">
+            <button id="play-combined" class="bg-blue-600 text-white py-1 px-3 rounded-md">Play</button>
+            <button id="replay-combined" class="bg-gray-600 text-white py-1 px-3 rounded-md">Replay</button>
+            <button id="download-combined" class="bg-green-600 text-white py-1 px-3 rounded-md">Download</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="regenerate-btn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">Regenerate Harmony</button>
+    </div>
+
+    <div id="error" class="hidden mt-4 p-4 bg-red-100 text-red-700 rounded-md"></div>
+    <div id="loading" class="hidden mt-4 p-4 bg-blue-100 text-blue-700 rounded-md text-center">Processing...</div>
+  </div>
+
+  <script>
+    const uploadForm = document.getElementById('upload-form');
+    const resultsDiv = document.getElementById('results');
+    const errorDiv = document.getElementById('error');
+    const loadingDiv = document.getElementById('loading');
+    const regenerateBtn = document.getElementById('regenerate-btn');
+    const instrumentInput = document.getElementById('instrument');
+    const instrumentOptions = document.querySelectorAll('.instrument-option');
+    let tonalFeatures = null;
+    let audioUrls = {
+      uploaded: null,
+      harmony: null,
+      combined: null
+    };
+
+    // Create WaveSurfer instances
+    const waveUploaded = WaveSurfer.create({ container: '#wave-uploaded', waveColor: '#ccc', progressColor: '#3b82f6', responsive: true });
+    const waveHarmony = WaveSurfer.create({ container: '#wave-harmony', waveColor: '#ccc', progressColor: '#10b981', responsive: true });
+    const waveCombined = WaveSurfer.create({ container: '#wave-combined', waveColor: '#ccc', progressColor: '#f59e0b', responsive: true });
+
+    // Handle instrument selection
+    instrumentOptions.forEach(option => {
+      option.addEventListener('click', () => {
+        instrumentOptions.forEach(opt => opt.classList.remove('bg-blue-100', 'border-blue-500', 'border-2'));
+        option.classList.add('bg-blue-100', 'border-blue-500', 'border-2');
+        instrumentInput.value = option.dataset.instrument;
+      });
+    });
+
+    function clearError() {
+      errorDiv.textContent = '';
+      errorDiv.classList.add('hidden');
+    }
+
+    function showError(message) {
+      errorDiv.textContent = message;
+      errorDiv.classList.remove('hidden');
+    }
+
+    function setLoading(isLoading) {
+      if (isLoading) {
+        loadingDiv.classList.remove('hidden');
+        uploadForm.querySelector('button[type="submit"]').disabled = true;
+        regenerateBtn.disabled = true;
+      } else {
+        loadingDiv.classList.add('hidden');
+        uploadForm.querySelector('button[type="submit"]').disabled = false;
+        regenerateBtn.disabled = false;
+      }
+    }
+
+    // Helper to safely load waveform and listen for errors
+    function loadWaveform(waveSurferInstance, url) {
+      return new Promise((resolve, reject) => {
+        waveSurferInstance.empty();
+        waveSurferInstance.load(url);
+        waveSurferInstance.once('ready', () => resolve());
+        waveSurferInstance.once('error', (e) => reject(e));
+      });
+    }
+
+    // Helper to download audio
+    function downloadAudio(url, filename) {
+      if (!url) {
+        showError('Audio file not available for download');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+      setLoading(true);
+      resultsDiv.classList.add('hidden');
+
+      const fileInput = document.getElementById('audio');
+      const instrument = instrumentInput.value;
+
+      if (!fileInput.files.length) {
+        showError('Please select an audio file to upload.');
+        setLoading(false);
+        return;
+      }
+      if (!instrument) {
+        showError('Please select an instrument.');
+        setLoading(false);
+        return;
+      }
+
+      const formData = new FormData(uploadForm);
+      try {
+        const response = await fetch('/recommend', {
+          method: 'POST',
+          body: formData,
+          timeout: 30000 // 30 seconds timeout
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          tonalFeatures = data.tonal_features;
+          audioUrls = {
+            uploaded: data.uploaded_audio_url,
+            harmony: data.harmony_preview_url,
+            combined: data.combined_audio_url
+          };
+
+          document.getElementById('tonal-features').textContent = JSON.stringify(data.tonal_features, null, 2);
+          document.getElementById('recommended-chords').textContent = data.recommended_chords.join(', ');
+          document.getElementById('chord-progression').textContent = data.chord_progression;
+
+          // Load waveforms with error handling
+          try {
+            await loadWaveform(waveUploaded, data.uploaded_audio_url);
+            await loadWaveform(waveHarmony, data.harmony_preview_url);
+            await loadWaveform(waveCombined, data.combined_audio_url);
+          } catch (err) {
+            console.error('WaveSurfer load error:', err);
+            showError('Failed to load audio preview waveforms.');
+          }
+
+          resultsDiv.classList.remove('hidden');
+        } else {
+          showError(data.error || 'An error occurred');
+        }
+      } catch (err) {
+        console.error('Upload error:', err);
+        showError('Failed to process request: ' + err.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    regenerateBtn.addEventListener('click', async () => {
+      clearError();
+
+      if (!tonalFeatures) {
+        showError('No tonal features available for regeneration');
+        return;
+      }
+
+      const instrument = instrumentInput.value;
+      if (!instrument) {
+        showError('Please select an instrument');
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
+
+        const response = await fetch('/regenerate-harmony', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ features: tonalFeatures, instrument }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        const data = await response.json();
+
+        if (response.ok) {
+          document.getElementById('recommended-chords').textContent = data.recommended_chords.join(', ');
+          document.getElementById('chord-progression').textContent = data.chord_progression;
+          audioUrls.harmony = data.harmony_preview_url;
+
+          try {
+            await loadWaveform(waveHarmony, data.harmony_preview_url);
+          } catch (err) {
+            console.error('WaveSurfer load error:', err);
+            showError('Failed to load harmony preview waveform.');
+          }
+        } else {
+          showError(data.error || 'Failed to regenerate harmony');
+        }
+      } catch (err) {
+        console.error('Regeneration error:', err);
+        showError('Failed to regenerate harmony: ' + err.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    // Play, Replay, and Download functionality
+    document.getElementById('play-uploaded').addEventListener('click', () => waveUploaded.play());
+    document.getElementById('replay-uploaded').addEventListener('click', () => {
+      waveUploaded.stop();
+      waveUploaded.play();
+    });
+    document.getElementById('download-uploaded').addEventListener('click', () => {
+      downloadAudio(audioUrls.uploaded, 'uploaded_audio.mp3');
+    });
+
+    document.getElementById('play-harmony').addEventListener('click', () => waveHarmony.play());
+    document.getElementById('replay-harmony').addEventListener('click', () => {
+      waveHarmony.stop();
+      waveHarmony.play();
+    });
+    document.getElementById('download-harmony').addEventListener('click', () => {
+      downloadAudio(audioUrls.harmony, 'harmony_preview.mp3');
+    });
+
+    document.getElementById('play-combined').addEventListener('click', () => waveCombined.play());
+    document.getElementById('replay-combined').addEventListener('click', () => {
+      waveCombined.stop();
+      waveCombined.play();
+    });
+    document.getElementById('download-combined').addEventListener('click', () => {
+      downloadAudio(audioUrls.combined, 'combined_audio.mp3');
+    });
+  </script>
+</body>
+</html>
